@@ -10,7 +10,7 @@ import requests
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 # If this model name is rejected, copy a current one from https://aistudio.google.com
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 MAX_CHARS = 15000
 
 PROMPT = """You are a strict senior code reviewer and DevSecOps engineer.
@@ -21,8 +21,14 @@ Review the git diff below. Respond ONLY with JSON in this exact shape:
   "issues": [{"severity": "Low|Medium|High", "file": "name", "problem": "...", "fix": "..."}],
   "release_notes": ["user-friendly bullet", "..."]
 }
-Rules: rate High if there are hardcoded secrets, injection flaws, or serious bugs.
-Rate Low only if the change is clean. Keep each text field short.
+Rules:
+- Rate High if there are hardcoded secrets, injection flaws, or serious bugs.
+  Rate Low only if the change is clean.
+- Also check for logic bugs such as division by zero, missing input validation
+  and missing error handling. List every issue as a separate item, even in the same file.
+- release_notes must describe ONLY what the diff actually adds, changes or removes.
+  Never describe the fixes you recommend as if they were already done.
+- If risk is High, the first release note must be: "BLOCKED: not safe to release, see issues."
 
 DIFF:
 """
