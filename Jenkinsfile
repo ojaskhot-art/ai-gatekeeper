@@ -2,7 +2,7 @@ pipeline {
     agent any
     environment {
         GEMINI_API_KEY   = credentials('ai-api-key')
-        GEMINI_MODEL     = 'gemini-flash-latest'
+        GEMINI_MODEL     = 'gemini-3.1-flash-lite'
         PYTHONIOENCODING = 'utf-8'
     }
     stages {
