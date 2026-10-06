@@ -40,22 +40,53 @@ def get_diff():
     return out[:MAX_CHARS]
 
 
+class ApiError(Exception):
+    pass
+
+
+def model_list():
+    wanted = [MODEL, "gemini-3.1-flash-lite", "gemini-3.5-flash"]
+    seen = []
+    for m in wanted:
+        if m and m not in seen:
+            seen.append(m)
+    return seen
+
+
 def call_ai(diff):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
     body = {
         "contents": [{"parts": [{"text": PROMPT + diff}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},
     }
-    for attempt in range(3):
-        r = requests.post(url, json=body, headers={"x-goog-api-key": API_KEY}, timeout=60)
-        if r.status_code in (429, 503):
-            time.sleep(5 * (attempt + 1))
-            continue
-        r.raise_for_status()
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        text = text.strip().removeprefix("```json").removesuffix("```").strip()
-        return json.loads(text)
-    raise RuntimeError("AI API busy, try again")
+    last = "no attempt made"
+    for model in model_list():
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        for attempt in range(1, 4):
+            try:
+                r = requests.post(url, json=body, headers={"x-goog-api-key": API_KEY}, timeout=90)
+            except requests.RequestException as e:
+                last = f"{model}: network error {e}"
+                print(f"[retry] {last}")
+                time.sleep(5 * attempt)
+                continue
+            if r.status_code in (429, 500, 503):
+                last = f"{model}: HTTP {r.status_code} (busy/rate limited)"
+                print(f"[retry] {last}, attempt {attempt}/3")
+                time.sleep(10 * attempt)
+                continue
+            if r.status_code != 200:
+                last = f"{model}: HTTP {r.status_code} {r.text[:200]}"
+                print(f"[skip] {last}")
+                break  # try the next model
+            try:
+                text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                text = text.strip().removeprefix("```json").removesuffix("```").strip()
+                print(f"Model used: {model}")
+                return json.loads(text)
+            except (KeyError, IndexError, ValueError) as e:
+                last = f"{model}: bad response ({e})"
+                print(f"[retry] {last}")
+    raise ApiError(last)
 
 
 def write_report(d):
@@ -90,7 +121,11 @@ def main():
     if not diff.strip():
         print("No diff found, skipping review")
         return
-    result = call_ai(diff)
+    try:
+        result = call_ai(diff)
+    except ApiError as e:
+        print(f"AI SERVICE UNAVAILABLE (not a code problem): {e}")
+        sys.exit(2)
     write_report(result)
     print(f"AI review finished in {time.time() - start:.1f}s")
     print(f"RISK: {result.get('risk')}  |  {result.get('summary')}")
